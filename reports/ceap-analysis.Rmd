@@ -1,0 +1,189 @@
+---
+title: "EDA - CEAP"
+output:
+    html_document:
+        code_folding: hide
+        theme: flatly
+---
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(here)
+library(plotly)
+
+theme_set(theme_bw())
+
+```
+
+## Os Dados
+
+Para a nossa análise iremos utilizar dados sobre as despesas dos deputados federais da legislatura atual com a atividade parlamentar. Para isso usaremos os dados do CEAP, que é uma cota única mensal destinada a custear os gastos dos deputados exclusivamente vinculados ao exercício da atividade parlamentar. 
+
+Os dados foram coletados no site de transparência da Câmara. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+read_csv(here::here("data/dadosCEAP.csv"),
+           progress = F,
+           col_types = cols(
+             nomeParlamentar = col_character(),
+             idCadastro = col_integer(),
+             sgUF = col_character(),
+             sgPartido = col_character(),
+             tipoDespesa = col_character(),
+             especDespesa = col_character(),
+             fornecedor = col_character(),
+             CNPJCPF = col_character(),
+             tipoDocumento = col_integer(),
+             dataEmissao = col_character(),
+             valorDocumento = col_double(),
+             valorGlosa = col_integer(),
+             valorLíquido = col_double())) -> data
+
+read_csv(here::here("/data/limiteMensalCEAP.csv"),
+           progress = F,
+           col_types = cols(
+             UF = col_character(),
+             limite_mensal = col_double())) -> limite_mensal
+
+names(limite_mensal)[2] <- "limiteMensal"
+
+data %>% 
+  full_join(limite_mensal,
+            by = c("sgUF" = "UF")) -> data
+```
+
+```{r}
+data %>% glimpse()
+```
+
+
+### Descrição das variáveis
+
+No nosso conjunto de dados nós temos 14 variáveis:
+
+#### nomeParlamentar
+
+```
+Nome adotado pelo Parlamentar ao tomar posse do seu mandato.
+```
+
+#### idCadastro
+
+```
+Número que identifica unicamente um deputado federal na CD.
+```
+
+#### sgUF
+
+```
+No contexto da cota CEAP, representa a unidade da federação pela qual o deputado foi eleito e é utilizada para definir o valor da cota a que o deputado tem.
+```
+
+#### sgPartido
+
+```
+Sigla do partido do parlamentar.
+```
+
+#### tipoDespesa
+
+```
+O seu conteúdo é a descrição do Tipo de Despesa relativo à despesa em questão.
+```
+
+#### especDespesa
+
+```
+Representa a descrição  especificação mais detalhada de um referido Tipo de Despesa.
+```
+
+#### fornecedor
+
+```
+O conteúdo deste dado representa o nome do fornecedor do produto ou serviço presente no documento fiscal
+```
+
+#### CNPJCPF
+
+```
+O conteúdo deste dado representa o CNPJ ou o CPF do emitente do documento fiscal, quando se tratar do uso da cota em razão do reembolso despesas comprovadas pela emissão de documentos fiscais.
+```
+
+### tipoDocumento
+
+```
+Este dado representa o tipo de documento do fiscal – 0 (Zero), para Nota Fiscal; 1 (um), para Recibo; e 2, para Despesa no Exterior.
+```
+
+### dataEmissao
+
+```
+O conteúdo deste dado é a data de emissão do documento fiscal ou a data do documento que tenha dado causa à despesa.
+```
+
+#### valorDocumento
+
+```
+O seu conteúdo é o valor de face do documento fiscal ou o valor do documento que deu causa à despesa. Quando se tratar de bilhete aéreo, esse valor poderá ser negativo, significando que o referido bilhete é um bilhete de compensação, pois compensa um outro bilhete emitido e não utilizado pelo deputado (idem para o dado vlrLiquido abaixo).
+```
+
+#### valorGlosa
+
+```
+O seu conteúdo representa o valor da glosa do documento fiscal que incidirá sobre o Valor do Documento, ou o valor da glosa do documento que deu causa à despesa.
+```
+
+#### valorLiquido
+
+```
+O seu conteúdo representa o valor líquido do documento fiscal ou do documento que deu causa à despesa e será calculado pela diferença entre o Valor do Documento e o Valor da Glosa. É este valor que será debitado da cota do deputado. Caso o débito seja do Tipo Telefonia e o valor seja igual a zero, significa que a despesa foi franqueada.
+```
+
+#### limiteMensal
+
+```
+O seu conteúdo representa o límite mensal de CEAP para o estado (UF) do parlamentar.
+```
+
+
+# Perguntas 
+
+## Quais são os deputados que gastaram mais dinheiro da CEAP? Quais são os mais econômicos?
+
+```{r}
+data %>%
+    group_by(sgUF,
+             idCadastro,
+             nomeParlamentar) %>%
+    summarize(valorTotal = sum(valorLíquido)) %>%
+    ungroup() %>%
+    filter(valorTotal >= 0) %>%
+    arrange(valorTotal) %>% 
+    slice(c(1:10, (n()-9):n())) %>%
+    mutate(medianaGasto = mean(valorTotal), gastaMuito = if_else(valorTotal > medianaGasto, "Gastadores", "Econômicos")) %>% 
+    ggplot(aes(x = valorTotal, 
+               y = reorder(nomeParlamentar, valorTotal))) +
+    geom_point(aes(color = sgUF), size = 3.5) +
+    theme(axis.text.x = element_text(angle = 30,
+                                     hjust = 1)) +
+    labs(x = "Gasto total (R$)", 
+         y = "Nome do Parlamentar",
+         title = "Gastos por Parlamentar (R$)") +
+    facet_wrap(~gastaMuito, scales = "free")
+```
+
+Há casos em que os gastos são negativos, principalmente quando se trata de bilhetes aéreos pois podem significar um bilhete de compensação, pois compensa um outro bilhete emitido e não utilizado pelo parlamentar. E para evitar tais tratamentos, filtramos os parlamentares que possuíam a soma de seus gastos maior ou igual a 0 (`valorTotal >= 0`). 
+
+Na visualização é possível perceber 2 grupos de 10 parlamentares, um grupo é de parlamentares __econômicos__ e o outro de parlamentares __gastadores__. Na primeira olhada conseguimos perceber que há uma enorme diferença entre os dois grupos, enquanto o maior gasto dos __econômicos__ é de `R$ 179,18` o menor gasto dos __gastadores__ é de `R$ 1.405.644,19`. 
+
+O mais gastador é __EDIO LOPES__ e o mais econômico é __CAMILO COLA__.
+
+## Quais os estados cujos deputados gastam mais no exterior? Quais os estados cujos deputados gastam menos no exterior?
+
+## Quais os partidos cujos parlamentares mais usam CEAP no estado da Paraíba? Quais são os que menos usam? Mesmas perguntas considerando valores em R$.
+
+## Quais os deputados que mais ultrapassam o limite de CEAP do seu estado? (Limite mensal).
+
+## Quais estados cujos parlamentares gastam mais com passagens aéreas?
+
+## Escolha três partidos e responda: Quais são os tipos de despesa mais utilizados no uso da CEAP pelos deputados desses partidos? Mesma pergunta considerando valores em R$.

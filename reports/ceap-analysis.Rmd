@@ -9,17 +9,13 @@ output:
 
 library(tidyverse)
 library(here)
-library(plotly)
+library(lubridate)
 
 theme_set(theme_bw())
 
 ```
 
 ## Os Dados
-
-Para a nossa análise iremos utilizar dados sobre as despesas dos deputados federais da legislatura atual com a atividade parlamentar. Para isso usaremos os dados do CEAP, que é uma cota única mensal destinada a custear os gastos dos deputados exclusivamente vinculados ao exercício da atividade parlamentar. 
-
-Os dados foram coletados no site de transparência da Câmara. 
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 read_csv(here::here("data/dadosCEAP.csv"),
@@ -56,6 +52,9 @@ data %>%
 data %>% glimpse()
 ```
 
+Para a nossa análise iremos utilizar dados sobre as despesas dos deputados federais da legislatura atual com a atividade parlamentar. Para isso usaremos os dados do CEAP, que é uma cota única mensal destinada a custear os gastos dos deputados exclusivamente vinculados ao exercício da atividade parlamentar. 
+
+Os dados foram coletados no site de transparência da Câmara. 
 
 ### Descrição das variáveis
 
@@ -168,7 +167,7 @@ data %>%
                                      hjust = 1)) +
     labs(x = "Gasto total (R$)", 
          y = "Nome do Parlamentar",
-         title = "Gastos por Parlamentar (R$)") +
+         fill = "Sigla do Estado") +
     facet_wrap(~gastaMuito, scales = "free")
 ```
 
@@ -180,10 +179,175 @@ O mais gastador é __EDIO LOPES__ e o mais econômico é __CAMILO COLA__.
 
 ## Quais os estados cujos deputados gastam mais no exterior? Quais os estados cujos deputados gastam menos no exterior?
 
+Os gastos com despesas no exterior são caracterizados por ter o `tipoDocumento` com valor 2, portanto, aplicaremos um filtro nos nossos dados para realizar a visualização.
+
+```{r}
+data %>%
+  filter(tipoDocumento == 2) %>%
+  group_by(sgUF) %>%
+  summarize(gastoExterior = sum(valorLíquido)) %>%
+  ggplot(aes(x = reorder(sgUF, gastoExterior),
+             y = gastoExterior,
+             fill = sgUF)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Estado", 
+       y = "Despesas no Exterior (R$)", 
+       fill = "Sigla do Estado")
+```
+
+Com a visualização acima conseguimos perceber que os estados que mais gastam no exterior são __SP (São Paulo)__, __MG (Minas Gerais)__ e __PE (Pernambuco)__ enquanto os que menos gastam são __MA (Maranhão)__, __PB (Paraíba)__ e __PA (Pará)__.
+
 ## Quais os partidos cujos parlamentares mais usam CEAP no estado da Paraíba? Quais são os que menos usam? Mesmas perguntas considerando valores em R$.
+
+```{r}
+data %>%
+  filter(sgUF == "PB") %>%
+  na.omit(sgUF,
+          sgPartido,
+          valorLíquido) %>%
+  group_by(sgPartido) %>%
+  summarize(gastoTotal = sum(valorLíquido)) %>%
+  ggplot(aes(x = reorder(sgPartido, gastoTotal),
+             y = gastoTotal,
+             fill = sgPartido)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(breaks = seq(from = 650,
+                                  to = 390000,
+                                  by = 60000)) +
+  labs(x = "Partido", 
+       y = "Uso do CEAP (R$)", 
+       fill = "Sigla do Partido")
+```
+
+A partir da visualização acima, conseguimos perceber que existe uma grande dominância do partido __PMDB (Movimento Democrático Brasileiro)__ em relação ao uso DO CEAP, com o valor de __R$ 389.826,44__ enquanto que o partido __PROS (Partido Republicano da Ordem Social)__ utilizou apenas __R$ 672,21__ seguido do __PSC (Partido Social Cristão)__ que utilizou um pouco mais, com __R$ 3.802,40__.
 
 ## Quais os deputados que mais ultrapassam o limite de CEAP do seu estado? (Limite mensal).
 
+Para essa pergunta iremos utilizar um outro conjunto de dados que nos diz o limite mensal de uso do CEAP por estado.
+
+```{r}
+limite_mensal %>% glimpse()
+```
+
+Portanto, primeiro iremos fazer o tratamento dos dados para termos o mês e ano do gasto:
+
+```{r}
+data %>% 
+  mutate(dataEmissao = parse_date_time(dataEmissao,"%Y-%m-%d %H:%M:%S"),
+         anoMes = paste(lubridate::year(dataEmissao),
+                            lubridate::month(dataEmissao), sep = "-")) -> data.limiteMensal
+  
+data.limiteMensal %>% glimpse()
+```
+
+E por fim...
+
+```{r}
+data.limiteMensal %>%
+  group_by(sgUF, idCadastro, anoMes,
+           nomeParlamentar, limiteMensal) %>% 
+  summarise(gastoMensal = sum(valorLíquido)) %>% 
+  filter(anoMes != "NA-NA") %>% 
+  filter(gastoMensal > limiteMensal) %>%
+  ungroup() -> data.gastosMensais
+
+data.gastosMensais %>%
+  group_by(nomeParlamentar) %>%
+  summarise(diferencaGasto = sum(limiteMensal) - sum(gastoMensal)) %>%
+  arrange(diferencaGasto) %>%
+  slice(c(1:5)) %>%
+  ggplot(aes(x = reorder(nomeParlamentar, diferencaGasto),
+             y = diferencaGasto,
+             fill = nomeParlamentar)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(breaks = seq(from = 0,
+                                to = -540000,
+                                by = -90000)) +
+  coord_flip() +
+  labs(x = "Parlamentar", 
+       y = "Diferença de Gastos (R$)", 
+       fill = "Nome do Parlamentar")
+```
+
+Na visualização acima temos os 5 primeiros parlamentares que gastam mais do que o limite mensal, podemos perceber que os valores para a __Diferença de Gastos__ para cada um deles é bem inferior a __0__, ou seja, a diferença `sum(limiteMensal) - sum(gastoMensal)` é realmente muito desigual, tendo eles gastado bem mais que o limite.
+
 ## Quais estados cujos parlamentares gastam mais com passagens aéreas?
 
+```{r}
+data %>%
+  filter(tipoDespesa == "PASSAGENS AÉREAS") %>%
+  group_by(sgUF) %>%
+  summarize(gastoPassagens = sum(valorLíquido)) %>%
+  filter(sgUF != "NA") %>%
+  ggplot(aes(x = reorder(sgUF, gastoPassagens),
+             y = gastoPassagens,
+             fill = sgUF)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Estado", 
+       y = "Gasto com Passagens Aéreas (R$)", 
+       fill = "Sigla do Estado")
+```
+
+Dentre os estados acima, os que mais gastam com passagens aéreas são __MG (Minas Gerais)__, __RJ (Rio de Janeiro)__, __AM (Amazonas)__, __SP (São Paulo)__.
+
 ## Escolha três partidos e responda: Quais são os tipos de despesa mais utilizados no uso da CEAP pelos deputados desses partidos? Mesma pergunta considerando valores em R$.
+
+Dentre os partidos presentes no nosso conjunto de dados iremos escolher os mais "famosos": __PT__, __PSDB__ e __PMDB__.
+
+### PT
+
+```{r}
+data %>%
+  filter(sgPartido %in% c("PT")) %>%
+  group_by(tipoDespesa) %>%
+  summarize(gastoTotal = sum(valorLíquido)) %>%
+  ggplot(aes(x = reorder(tipoDespesa, gastoTotal),
+             y = gastoTotal)) +
+  geom_bar(stat="identity",
+           fill="#A81F24") +
+  labs(y = "Gasto Total (R$)", 
+       x = "Tipo de gasto") +
+  coord_flip() 
+```
+
+É bem fácil percebermos que o partido __PT__ possui muitos gastos com __Emissão de Bilhete Aéreo__, mas também tem gastos com __Divulgação da Atividade Parlamentar__ e dentre outras tarefas como podemos ver mais acima.
+
+### PSDB
+
+```{r}
+data %>%
+  filter(sgPartido %in% c("PSDB")) %>%
+  group_by(tipoDespesa) %>%
+  summarize(gastoTotal = sum(valorLíquido)) %>%
+  ggplot(aes(x = reorder(tipoDespesa, gastoTotal),
+             y = gastoTotal)) +
+  geom_bar(stat="identity",
+           fill="#143489") +
+  labs(y = "Gasto Total (R$)", 
+       x = "Tipo de gasto") +
+  coord_flip() 
+```
+
+De forma bastante semelhante ao __PT__, o __PSDB__ possui gastos concentrados em __Emissão de Bilhete Aéreo__ com alguns outros gastos na __Divulgação da Atividade Parlamentar__.
+
+### PMDB
+
+```{r}
+data %>%
+  filter(sgPartido %in% c("PMDB")) %>%
+  group_by(tipoDespesa) %>%
+  summarize(gastoTotal = sum(valorLíquido)) %>%
+  ggplot(aes(x = reorder(tipoDespesa, gastoTotal),
+             y = gastoTotal)) +
+  geom_bar(stat="identity",
+           fill="#FFB301") +
+  labs(y = "Gasto Total (R$)", 
+       x = "Tipo de gasto") +
+  coord_flip() 
+```
+
+Para o __PMDB__ temos a situação inversa, o maior gasto do partido é com __Divulgação da Atividade Parlamentar__ e em seguida, os gastos com __Emissão de Bilhete Aéreo__.
+
+### Conclusão
+
+Desconsiderando esses dois comuns e grandes gastos dos partidos acima, o terceiro ponto em que eles mais gastam o dinheiro é com __Manutenção de Escritório de Apoio à Atividade Parlamentar__ para o __PT__ e __PSDB__ enquanto que para o __PMDB__ temos mais gastos com __Locação ou Fretamento de Veículos Automotores__.

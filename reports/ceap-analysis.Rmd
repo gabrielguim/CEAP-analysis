@@ -152,14 +152,16 @@ O seu conteúdo representa o límite mensal de CEAP para o estado (UF) do parlam
 ```{r}
 data %>%
     group_by(sgUF,
-             idCadastro,
+             idCadastro, 
              nomeParlamentar) %>%
     summarize(valorTotal = sum(valorLíquido)) %>%
     ungroup() %>%
     filter(valorTotal >= 0) %>%
     arrange(valorTotal) %>% 
-    slice(c(1:10, (n()-9):n())) %>%
-    mutate(medianaGasto = mean(valorTotal), gastaMuito = if_else(valorTotal > medianaGasto, "Gastadores", "Econômicos")) %>% 
+    slice(c(1:10, (n()-9):n())) %>% # 10 primeiros e 10 ultimos parlamentares
+    mutate(mediaGasto = mean(valorTotal),
+           gastaMuito = if_else(valorTotal > mediaGasto, 
+                                "Gastadores", "Econômicos")) %>%  # classificação baseada na media dos gastos
     ggplot(aes(x = valorTotal, 
                y = reorder(nomeParlamentar, valorTotal))) +
     geom_point(aes(color = sgUF), size = 3.5) +
@@ -213,7 +215,7 @@ data %>%
   geom_bar(stat = "identity") +
   scale_y_continuous(breaks = seq(from = 650,
                                   to = 390000,
-                                  by = 60000)) +
+                                  by = 60000)) + # Melhorar a exibição (antes estava com escala log pela grande diferença entre os dados)
   labs(x = "Partido", 
        y = "Uso do CEAP (R$)", 
        fill = "Sigla do Partido")
@@ -235,7 +237,7 @@ Portanto, primeiro iremos fazer o tratamento dos dados para termos o mês e ano 
 data %>% 
   mutate(dataEmissao = parse_date_time(dataEmissao,"%Y-%m-%d %H:%M:%S"),
          anoMes = paste(lubridate::year(dataEmissao),
-                            lubridate::month(dataEmissao), sep = "-")) -> data.limiteMensal
+                            lubridate::month(dataEmissao), sep = "-")) -> data.limiteMensal # pegando o ano e mês do gasto para facilitar nas visualizações mais pela frente
   
 data.limiteMensal %>% glimpse()
 ```
@@ -253,16 +255,16 @@ data.limiteMensal %>%
 
 data.gastosMensais %>%
   group_by(nomeParlamentar) %>%
-  summarise(diferencaGasto = sum(limiteMensal) - sum(gastoMensal)) %>%
+  summarise(diferencaGasto = sum(limiteMensal) - sum(gastoMensal)) %>% # A diferença de gastos é usada pra saber quanto ele gasta em relação ao limite (se > 0 então gasta menos, se < 0 então gasta mais)
   arrange(diferencaGasto) %>%
-  slice(c(1:5)) %>%
+  slice(c(1:5)) %>% # observação para uma pequena amostra de 5 parlamentares
   ggplot(aes(x = reorder(nomeParlamentar, diferencaGasto),
              y = diferencaGasto,
              fill = nomeParlamentar)) +
   geom_bar(stat = "identity") +
   scale_y_continuous(breaks = seq(from = 0,
                                 to = -540000,
-                                by = -90000)) +
+                                by = -90000)) + # Melhorar a exibição (antes estava com escala log pela grande diferença entre os dados)
   coord_flip() +
   labs(x = "Parlamentar", 
        y = "Diferença de Gastos (R$)", 

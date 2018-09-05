@@ -353,3 +353,26 @@ Para o __PMDB__ temos a situação inversa, o maior gasto do partido é com __Di
 ### Conclusão
 
 Desconsiderando esses dois comuns e grandes gastos dos partidos acima, o terceiro ponto em que eles mais gastam o dinheiro é com __Manutenção de Escritório de Apoio à Atividade Parlamentar__ para o __PT__ e __PSDB__ enquanto que para o __PMDB__ temos mais gastos com __Locação ou Fretamento de Veículos Automotores__.
+
+
+## Quais são os postos de combustíveis que mais atendem os parlamentares?
+
+Seria o motivo do abastecimento a confiança para com o posto ou algum tipo de "amizade" ou "relação empresarial"? 
+
+Em uma breve estudada nos dados pude perceber que existem muitos gastos com o tipo `COMBUSTÍVEIS E LUBRIFICANTES.`, onde os abastecimentos foram de `Veículos Automotores` e em alguns casos temos também abastecimento de `Aeronaves`.
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  group_by(nomeParlamentar, 
+           sgUF, 
+           tipoDespesa, 
+           especDespesa, 
+           fornecedor) %>%
+  summarize(n = n(),
+            qtdAbastecida = sum(valorLíquido)) -> data.postos
+
+data.postos
+  
+```
+

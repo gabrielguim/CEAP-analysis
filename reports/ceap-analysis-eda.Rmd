@@ -1,0 +1,351 @@
+---
+title: "EDA - CEAP - Parte 2"
+output:
+    html_document:
+        code_folding: hide
+        theme: flatly
+---
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(here)
+library(lubridate)
+
+theme_set(theme_bw())
+
+```
+
+## Os Dados
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+read_csv(here::here("data/dadosCEAP.csv"),
+           progress = F,
+           col_types = cols(
+             nomeParlamentar = col_character(),
+             idCadastro = col_integer(),
+             sgUF = col_character(),
+             sgPartido = col_character(),
+             tipoDespesa = col_character(),
+             especDespesa = col_character(),
+             fornecedor = col_character(),
+             CNPJCPF = col_character(),
+             tipoDocumento = col_integer(),
+             dataEmissao = col_character(),
+             valorDocumento = col_double(),
+             valorGlosa = col_integer(),
+             valorLíquido = col_double())) -> data
+
+read_csv(here::here("/data/limiteMensalCEAP.csv"),
+           progress = F,
+           col_types = cols(
+             UF = col_character(),
+             limite_mensal = col_double())) -> limite_mensal
+
+names(limite_mensal)[2] <- "limiteMensal"
+
+data %>% 
+  full_join(limite_mensal,
+            by = c("sgUF" = "UF")) -> data
+```
+
+```{r}
+data %>% glimpse()
+```
+
+Para a nossa análise iremos utilizar dados sobre as despesas dos deputados federais da legislatura atual com a atividade parlamentar. Para isso usaremos os dados do CEAP, que é uma cota única mensal destinada a custear os gastos dos deputados exclusivamente vinculados ao exercício da atividade parlamentar. 
+
+Os dados foram coletados no site de transparência da Câmara. 
+
+### Descrição das variáveis
+
+No nosso conjunto de dados nós temos 14 variáveis:
+
+#### nomeParlamentar
+
+```
+Nome adotado pelo Parlamentar ao tomar posse do seu mandato.
+```
+
+#### idCadastro
+
+```
+Número que identifica unicamente um deputado federal na CD.
+```
+
+#### sgUF
+
+```
+No contexto da cota CEAP, representa a unidade da federação pela qual o deputado foi eleito e é utilizada para definir o valor da cota a que o deputado tem.
+```
+
+#### sgPartido
+
+```
+Sigla do partido do parlamentar.
+```
+
+#### tipoDespesa
+
+```
+O seu conteúdo é a descrição do Tipo de Despesa relativo à despesa em questão.
+```
+
+#### especDespesa
+
+```
+Representa a descrição  especificação mais detalhada de um referido Tipo de Despesa.
+```
+
+#### fornecedor
+
+```
+O conteúdo deste dado representa o nome do fornecedor do produto ou serviço presente no documento fiscal
+```
+
+#### CNPJCPF
+
+```
+O conteúdo deste dado representa o CNPJ ou o CPF do emitente do documento fiscal, quando se tratar do uso da cota em razão do reembolso despesas comprovadas pela emissão de documentos fiscais.
+```
+
+#### tipoDocumento
+
+```
+Este dado representa o tipo de documento do fiscal – 0 (Zero), para Nota Fiscal; 1 (um), para Recibo; e 2, para Despesa no Exterior.
+```
+
+#### dataEmissao
+
+```
+O conteúdo deste dado é a data de emissão do documento fiscal ou a data do documento que tenha dado causa à despesa.
+```
+
+#### valorDocumento
+
+```
+O seu conteúdo é o valor de face do documento fiscal ou o valor do documento que deu causa à despesa. Quando se tratar de bilhete aéreo, esse valor poderá ser negativo, significando que o referido bilhete é um bilhete de compensação, pois compensa um outro bilhete emitido e não utilizado pelo deputado (idem para o dado vlrLiquido abaixo).
+```
+
+#### valorGlosa
+
+```
+O seu conteúdo representa o valor da glosa do documento fiscal que incidirá sobre o Valor do Documento, ou o valor da glosa do documento que deu causa à despesa.
+```
+
+#### valorLiquido
+
+```
+O seu conteúdo representa o valor líquido do documento fiscal ou do documento que deu causa à despesa e será calculado pela diferença entre o Valor do Documento e o Valor da Glosa. É este valor que será debitado da cota do deputado. Caso o débito seja do Tipo Telefonia e o valor seja igual a zero, significa que a despesa foi franqueada.
+```
+
+#### limiteMensal
+
+```
+O seu conteúdo representa o límite mensal de CEAP para o estado (UF) do parlamentar.
+```
+
+# Perguntas
+
+# Como se comportam as despesas com combustíveis por Estado?
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  group_by(sgUF, 
+           tipoDespesa) %>%
+  summarize(n = n()) %>% 
+  ggplot(aes(x = reorder(sgUF, n),
+             y = n,
+             fill = sgUF)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Estado", 
+       y = "Quantidade de abastecimentos", 
+       fill = "Sigla do Estado")
+  
+```
+
+Com a visualização acima conseguimos perceber que dentre os estados que mais abastecem temos __SP (São Paulo)__ e __MG (Minas Gerais)__.
+
+### Abasteceu o que tanto?
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  group_by(especDespesa) %>%
+  summarize(n = n()) %>% 
+  ggplot(aes(x = reorder(especDespesa, n),
+             y = n,
+             fill = especDespesa)) +
+  geom_bar(stat = "identity") +
+  scale_y_log10() +
+  labs(x = "Especificação da despesa", 
+       y = "Quantidade de abastecimentos (log)", 
+       fill = "Especificação")
+```
+
+Com a visualização acima podemos ver que temos quatro especificações diferentes para despesas do tipo `COMBUSTÍVEIS E LUBRIFICANTES`:
+
+### Embarcações
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  group_by(sgUF, 
+           especDespesa) %>%
+  summarize(n = n()) %>% 
+  filter(especDespesa %in% c("Embarcações")) %>%
+  ggplot(aes(x = reorder(sgUF, n),
+             y = n,
+             fill = sgUF)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Quantidade de abastecimentos por Estado para 'Embarcações'",
+       x = "Estado", 
+       y = "Quantidade de abastecimentos", 
+       fill = "Sigla do Estado")
+```
+
+Para __Embarcações__ temos que o estado da __BA (Bahia)__ é o vencedor no quesito _"quantidade de abastecimentos"_, a única coisa que vem na minha cabeça para talvez justificar esse uso ao visualizar essa diferença é a questão dos portos/docas, mas o motivo para usarem o dinheiro do __CEAP__ para isso aí já não posso dizer muita coisa.
+
+### Sem especificações
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  group_by(sgUF, 
+           especDespesa) %>%
+  summarize(n = n()) %>% 
+  filter(especDespesa %in% c("Sem especificações")) %>%
+  ggplot(aes(x = reorder(sgUF, n),
+             y = n,
+             fill = sgUF)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Quantidade de abastecimentos por Estado para 'Sem especificações'",
+       x = "Estado", 
+       y = "Quantidade de abastecimentos", 
+       fill = "Sigla do Estado")
+```
+
+Nessa visualização temos que o __CE (Ceará)__ possui mais gastos "Sem especificação" quando se trata do tipo `COMBUSTÍVEIS E LUBRIFICANTES`, não temos muitas conclusões a cerca disso pois não sabemos os motivos pelos quais não houve espeficicação, mas é algo para se investigar.
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  group_by(sgUF, 
+           especDespesa) %>%
+  summarize(somaGastos = sum(valorLíquido)) %>% 
+  filter(especDespesa %in% c("Sem especificações")) %>%
+  ggplot(aes(x = reorder(sgUF, somaGastos),
+             y = somaGastos,
+             fill = sgUF)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total gasto em R$ com abastecimento por Estado para 'Sem especificações'",
+       x = "Estado", 
+       y = "Gasto total (R$)", 
+       fill = "Sigla do Estado")
+```
+
+Como esperado, se usarmos ao invés da quantidade de abastecimentos o total gasto nesses abastecimentos, o __CE (Ceará)__ permanece em primeiro, ou seja, gastam cerca de __R$ 10.000,00__ com `COMBUSTÍVEIS E LUBRIFICANTES` mas sem especificação.
+
+### Aeronaves
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  group_by(sgUF, 
+           especDespesa) %>%
+  summarize(n = n()) %>% 
+  filter(especDespesa %in% c("Aeronaves")) %>%
+  ggplot(aes(x = reorder(sgUF, n),
+             y = n,
+             fill = sgUF)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Quantidade de abastecimentos por Estado para 'Aeronaves'",
+       x = "Estado", 
+       y = "Quantidade de abastecimentos", 
+       fill = "Sigla do Estado")
+```
+
+Novamente a __BA (Bahia)__ está no topo, pelo visto os parlamentares da Bahia costumam viajar pelo _ar_ e pela _água_ `¯\_(ツ)_/¯`
+
+### Veículos Automotores
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  group_by(sgUF, 
+           especDespesa) %>%
+  summarize(n = n()) %>% 
+  filter(especDespesa %in% c("Veículos Automotores")) %>%
+  ggplot(aes(x = reorder(sgUF, n),
+             y = n,
+             fill = sgUF)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Quantidade de abastecimentos por Estado para 'Veículos Automotores'",
+       x = "Estado", 
+       y = "Quantidade de abastecimentos", 
+       fill = "Sigla do Estado")
+```
+
+Com uma visualização semelhante a que vimos mais acima, __SP (São Paulo)__ e __MG (Minas Gerais)__ estão em primeiro lugar na quantidade de abastecimentos à Veículos Automotores.
+
+É curioso também observar que a __BA (Bahia)__ está entre os que mais abastecem Veículos Automotores, ou seja, além de Embarcações e Aeronaves eles também abastecem Veículos Automotores com bastante frequência...
+
+# Quais são os postos de combustíveis que mais atendem os parlamentares?
+
+Seria o motivo do abastecimento a confiança para com o posto ou algum tipo de "amizade" ou "relação empresarial"? 
+
+Em uma breve estudada nos dados pude perceber que existem muitos gastos com o tipo `COMBUSTÍVEIS E LUBRIFICANTES`, onde os abastecimentos foram de `Veículos Automotores` e em alguns casos temos também abastecimento de `Aeronaves`, `Embarcações` e `Sem especificações`.
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  mutate(fornecedor = gsub("\\.", "", toupper(stringi::stri_trans_general(fornecedor,'Latin-ASCII')))) %>% # remove os acentos, deixa tudo em uppercase e em seguida remove os pontos pois em alguns casos o fornecedor é o mesmo mas há diferença de acentuação, pontuação e tipo da escrita (maiúscula ou minúscula)
+  group_by(tipoDespesa,
+           fornecedor) %>%
+  summarize(n = n()) %>% 
+  arrange(-n) %>%
+  slice(c(1:5)) %>%
+  ggplot(aes(x = reorder(fornecedor, n),
+             y = n,
+             fill = reorder(fornecedor, -n))) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  labs(x = "Fornecedor", 
+       y = "Quantidade de abastecimentos", 
+       fill = "Fornecedor")
+```
+
+É possível pereceber que o fornecedor `CASCOL COMBUSTÍVEIS PARA VEÍCULOS LTDA` é a campeã em vendas, tendo abastecido mais de 15000 vezes os parlamentares, enquanto o `FRATELI POSTO DE COMBUSTÍVEIS LTDA`, que é o segundo colocado, não chegou nem a 5000 abastecimentos.
+
+Dando uma breve pesquisada em `CASCOL` pude perceber que é uma rede que possui muitas unidades em __Brasília__, no __Distrito Federal__. E também não é muito difícil encontrar matérias nos jornais que mostrem _polêmicas_ envolvendo essa rede de postos. 
+
+Os parlamentares que estão no _Palácio do Planalto_ abastecem bastante. 
+
+## Tá bom ou quer mais?
+
+Vamos tentar visualizar agora a quantidade em R$ que os postos conseguiram faturar com os abastecimentos realizados:
+
+```{r}
+data %>%
+  filter(tipoDespesa %in% c("COMBUSTÍVEIS E LUBRIFICANTES.")) %>%
+  mutate(fornecedor = gsub("\\.", "", toupper(stringi::stri_trans_general(fornecedor,'Latin-ASCII')))) %>% # remove os acentos, deixa tudo em uppercase e em seguida remove os pontos pois em alguns casos o fornecedor é o mesmo mas há diferença de acentuação, pontuação e tipo da escrita (maiúscula ou minúscula)
+  group_by(tipoDespesa,
+           fornecedor) %>%
+  summarize(gastoTotal = sum(valorLíquido)) %>%
+  arrange(-gastoTotal) %>%
+  slice(c(1:5)) %>%
+  ggplot(aes(x = reorder(fornecedor, gastoTotal),
+             y = gastoTotal,
+             fill = reorder(fornecedor, -gastoTotal))) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  labs(x = "Fornecedor", 
+       y = "Faturamento (R$)", 
+       fill = "Fornecedor")
+```
+
+O posto `CASCOL COMBUSTÍVEIS PARA VEÍCULOS LTDA` novamente está em primeiro (como esperado) e faturou uma quantia simbólica de __R$ 2.253.421,89__. Isso mesmo. 
+
+Não sei se é necessário que eu escreva mais alguma coisa... `(ಥ﹏ಥ)`
